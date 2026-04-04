@@ -1,0 +1,14 @@
+Tipo,Nombre,Tension_kV,Valor,Unidad,MVA_Calculado,Potencia_Trafo_MVA,Trafo_Actual,Trafo_Post
+ALIMENTADOR,AL-13.2-1,13.2,300,A,=IF(E2="MVA",D2,SQRT(3)*C2*D2/1000),,,
+ALIMENTADOR,AL-33-1,33,8.5,MVA,=IF(E3="MVA",D3,SQRT(3)*C3*D3/1000),,,
+TRANSFORMADOR,TR-1,,,,,15,1,1
+TRANSFORMADOR,TR-2,,,,,15,1,0
+
+RESUMEN,,,,,,,,
+Carga_Total_MVA,,,,,=SUMIFS(F:F,A:A,"ALIMENTADOR"),,,
+Capacidad_Pre_MVA,,,,,=SUMPRODUCT((A:A="TRANSFORMADOR")*(H:H=1)*G:G),,,
+Capacidad_Post_MVA,,,,,=SUMPRODUCT((A:A="TRANSFORMADOR")*(I:I=1)*G:G),,,
+Utilizacion_Pre_%,,,,,=IF(F9>0,F8/F9*100,0),,,
+Utilizacion_Post_%,,,,,=IF(F10>0,F8/F10*100,0),,,
+Puede_Sacar_Paralelo,,,,,=IF(F12<=85,"SI","NO"),,,
+Recomendado_Poner_Paralelo,,,,,=IF(F11>=90,"SI","NO"),,,

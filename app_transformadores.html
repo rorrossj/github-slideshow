@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Evaluación de Paralelo de Transformadores</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background: #f7f9fc; color: #16202a; }
+    h1 { margin-bottom: 6px; }
+    .card { background: white; border-radius: 10px; padding: 16px; margin: 16px 0; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #dce3ea; padding: 8px; text-align: left; }
+    th { background: #eef3f8; }
+    input, select, button { padding: 8px; border: 1px solid #c9d4df; border-radius: 6px; }
+    button { cursor: pointer; background: #114a8d; color: white; border: none; }
+    button.secondary { background: #5e6a76; }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .ok { color: #0f7b34; font-weight: bold; }
+    .bad { color: #b11226; font-weight: bold; }
+    .info { color: #114a8d; font-weight: bold; }
+    .small { font-size: 12px; color: #475569; }
+  </style>
+</head>
+<body>
+  <h1>Evaluador de maniobras de transformadores</h1>
+  <p class="small">Reglas: <strong>85%</strong> para <em>sacar de paralelo</em> y <strong>90%</strong> para recomendar <em>poner en paralelo</em>.</p>
+
+  <div class="card">
+    <div class="controls">
+      <label>Maniobra
+        <select id="maniobra">
+          <option value="sacar">Sacar de paralelo (umbral 85%)</option>
+          <option value="poner">Poner en paralelo (umbral 90%)</option>
+        </select>
+      </label>
+      <button onclick="evaluar()">Evaluar</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Alimentadores</h2>
+    <table id="tablaAlimentadores">
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Tensión (kV)</th>
+          <th>Valor de carga</th>
+          <th>Unidad</th>
+          <th>Quitar</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div class="controls" style="margin-top:10px">
+      <button type="button" class="secondary" onclick="agregarAlimentador()">Agregar alimentador</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Transformadores</h2>
+    <table id="tablaTransformadores">
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Potencia nominal (MVA)</th>
+          <th>En operación actual</th>
+          <th>Operación después de maniobra</th>
+          <th>Quitar</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div class="controls" style="margin-top:10px">
+      <button type="button" class="secondary" onclick="agregarTransformador()">Agregar transformador</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Resultado</h2>
+    <div id="resultado">Complete datos y presione Evaluar.</div>
+  </div>
+
+  <script>
+    const alimentadoresBody = document.querySelector('#tablaAlimentadores tbody');
+    const transformadoresBody = document.querySelector('#tablaTransformadores tbody');
+
+    function celdaInput(valor, type = 'text', min = '') {
+      return `<input type="${type}" value="${valor}" ${min !== '' ? `min="${min}"` : ''} />`;
+    }
+
+    function agregarAlimentador(data = {}) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${celdaInput(data.nombre || '')}</td>
+        <td>
+          <select>
+            <option value="13.2" ${(data.kv || '13.2') === '13.2' ? 'selected' : ''}>13.2</option>
+            <option value="33" ${(data.kv || '') === '33' ? 'selected' : ''}>33</option>
+          </select>
+        </td>
+        <td>${celdaInput(data.valor || 0, 'number', 0)}</td>
+        <td>
+          <select>
+            <option value="A" ${(data.unidad || 'A') === 'A' ? 'selected' : ''}>A</option>
+            <option value="MVA" ${(data.unidad || '') === 'MVA' ? 'selected' : ''}>MVA</option>
+          </select>
+        </td>
+        <td><button type="button" class="secondary" onclick="this.closest('tr').remove()">Quitar</button></td>`;
+      alimentadoresBody.appendChild(tr);
+    }
+
+    function agregarTransformador(data = {}) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${celdaInput(data.nombre || '')}</td>
+        <td>${celdaInput(data.mva || 0, 'number', 0)}</td>
+        <td><input type="checkbox" ${data.actual ?? true ? 'checked' : ''} /></td>
+        <td><input type="checkbox" ${data.post ?? true ? 'checked' : ''} /></td>
+        <td><button type="button" class="secondary" onclick="this.closest('tr').remove()">Quitar</button></td>`;
+      transformadoresBody.appendChild(tr);
+    }
+
+    function leerMVAAlimentador(tr) {
+      const [nameTd, kvTd, valorTd, unidadTd] = tr.children;
+      const kv = parseFloat(kvTd.querySelector('select').value);
+      const valor = parseFloat(valorTd.querySelector('input').value || '0');
+      const unidad = unidadTd.querySelector('select').value;
+
+      if (unidad === 'MVA') return valor;
+      return (Math.sqrt(3) * kv * valor) / 1000;
+    }
+
+    function sumaCapacidad(colIndexCheckbox) {
+      let total = 0;
+      [...transformadoresBody.querySelectorAll('tr')].forEach(tr => {
+        const mva = parseFloat(tr.children[1].querySelector('input').value || '0');
+        const activo = tr.children[colIndexCheckbox].querySelector('input').checked;
+        if (activo) total += mva;
+      });
+      return total;
+    }
+
+    function evaluar() {
+      const maniobra = document.getElementById('maniobra').value;
+      const cargaTotal = [...alimentadoresBody.querySelectorAll('tr')].reduce((acc, tr) => acc + leerMVAAlimentador(tr), 0);
+
+      const capPre = sumaCapacidad(2);
+      const capPost = sumaCapacidad(3);
+      const resultado = document.getElementById('resultado');
+
+      if (cargaTotal <= 0 || capPre <= 0 || capPost <= 0) {
+        resultado.innerHTML = '<span class="bad">Revise los datos:</span> carga y capacidades deben ser mayores que cero.';
+        return;
+      }
+
+      if (maniobra === 'sacar') {
+        const utilPost = (cargaTotal / capPost) * 100;
+        const umbral = 85;
+        const margenMVA = (capPost * umbral / 100) - cargaTotal;
+        const ok = utilPost <= umbral;
+        resultado.innerHTML = `
+          <p class="${ok ? 'ok' : 'bad'}">${ok ? '✅ Se puede sacar de paralelo.' : '❌ No se puede sacar de paralelo.'}</p>
+          <ul>
+            <li>Carga total: <strong>${cargaTotal.toFixed(3)} MVA</strong></li>
+            <li>Capacidad post-maniobra: <strong>${capPost.toFixed(3)} MVA</strong></li>
+            <li>Utilización post-maniobra: <strong>${utilPost.toFixed(2)}%</strong> (límite ${umbral}%)</li>
+            <li>${margenMVA >= 0 ? 'Margen' : 'Exceso'} respecto al 85%: <strong>${Math.abs(margenMVA).toFixed(3)} MVA</strong></li>
+          </ul>`;
+      } else {
+        const utilPre = (cargaTotal / capPre) * 100;
+        const umbral = 90;
+        const recomendado = utilPre >= umbral;
+        resultado.innerHTML = `
+          <p class="${recomendado ? 'ok' : 'info'}">${recomendado ? '✅ Recomendado poner en paralelo.' : 'ℹ️ No necesario poner en paralelo por nivel de carga.'}</p>
+          <ul>
+            <li>Carga total: <strong>${cargaTotal.toFixed(3)} MVA</strong></li>
+            <li>Capacidad actual (pre-maniobra): <strong>${capPre.toFixed(3)} MVA</strong></li>
+            <li>Utilización actual: <strong>${utilPre.toFixed(2)}%</strong> (umbral de recomendación ${umbral}%)</li>
+          </ul>`;
+      }
+    }
+
+    // Datos iniciales de ejemplo
+    agregarAlimentador({ nombre: 'AL-13.2-1', kv: '13.2', valor: 300, unidad: 'A' });
+    agregarAlimentador({ nombre: 'AL-33-1', kv: '33', valor: 8.5, unidad: 'MVA' });
+    agregarTransformador({ nombre: 'TR-1', mva: 15, actual: true, post: true });
+    agregarTransformador({ nombre: 'TR-2', mva: 15, actual: true, post: false });
+  </script>
+</body>
+</html>
